@@ -1,0 +1,19 @@
+@startuml 架构设计
+
+package "间隔重复引擎模块" {
+}
+
+package "AI管理模块" {
+}
+
+package "UI模块" {
+}
+
+package "主模块" {
+}
+
+间隔重复引擎模块 <.. 主模块
+AI管理模块 <.. 主模块
+UI模块 <.. 主模块
+
+@enduml
