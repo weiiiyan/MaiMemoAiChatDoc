@@ -1,19 +1,20 @@
 @startuml 架构设计
 
-package "间隔重复引擎模块" {
-}
+top to bottom direction
 
-package "AI管理模块" {
-}
+rectangle "UI模块" as UI
+rectangle "应用协调模块" as App
+rectangle "持久化模块" as Hold
+rectangle "学习场景编排模块" as Scene
+rectangle "数据同步模块" as Sync
+rectangle "间隔重复引擎接口" as SRS
+rectangle "AI服务接口" as AI
 
-package "UI模块" {
-}
-
-package "主模块" {
-}
-
-间隔重复引擎模块 <.. 主模块
-AI管理模块 <.. 主模块
-UI模块 <.. 主模块
+UI --> App : 交互信息
+App --> Scene : 学习数据、学习场景数据
+App --> Sync : 记忆数据、学习数据
+App --> Hold: 配置、上下文等需要持久化的数据
+Scene --> AI : 配置、上下文等需要持久化的数据
+Sync --> SRS : 记忆数据
 
 @enduml

@@ -1,0 +1,22 @@
+@startuml 间隔重复引擎模块接口
+
+interface "ISRSEngine" {
+  ' 获取当前到期需要复习的卡片列表
+  + getDueCards(): List<Card>
+  ' 提交某张卡片的复习结果，更新下次复习时间
+  + submitReview(id: CardId, quality: Int): void
+  ' 获取整体复习统计数据
+  + getStats(): ReviewStats
+}
+
+note right of ISRSEngine
+  quality 取值（SM-2）:
+  0 = 完全不记得
+  1 = 错误，记起后感觉很熟
+  2 = 错误，正确答案容易想起
+  3 = 正确，但困难
+  4 = 正确，轻微犹豫
+  5 = 完全正确
+end note
+
+@enduml

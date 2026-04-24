@@ -1,0 +1,27 @@
+@startuml UI模块接口
+
+interface "IUIModule" {
+  ' 切换到聊天视图，加载指定会话
+  + showChatView(sessionId: String): void
+  ' 切换到卡片复习视图
+  + showCardReviewView(): void
+  ' 切换到设置视图
+  + showSettingsView(): void
+  ' 在聊天区追加一条完整消息（user / assistant）
+  + appendMessage(role: String, content: String): void
+  ' 流式追加单个 token 到最后一条消息
+  + appendToken(token: String): void
+  ' 清空当前聊天区所有消息
+  + clearMessages(): void
+  ' 启用或禁用用户输入框
+  + setInputEnabled(enabled: Bool): void
+}
+
+note right of IUIModule
+  信号（Qt signal）:
+  - messageSent(content: String)              ' 用户点击发送
+  - reviewAnswered(cardId: String, quality: Int) ' 用户提交复习评分
+  - settingsChanged(key: String, value: Variant) ' 设置项变更
+end note
+
+@enduml
