@@ -1,0 +1,73 @@
+@startuml 学习场景编排模块接口
+
+' ==================== 枚举 ====================
+
+enum SceneType {
+  READING
+  WRITING
+  LISTENING
+  SPEAKING
+}
+
+note right of SceneType
+  对应四种英语技能练习：
+  READING  - 看句子，想象场景
+  WRITING  - 确定场景，打出句子
+  LISTENING - 听句子，想象场景
+  SPEAKING - 想象场景，说出句子
+end note
+
+' ==================== 数据模型 ====================
+
+class SceneConfig {
+  ' 每条词汇生成几个场景句子
+  + sentencesPerWord: Int
+}
+
+class LearningScene {
+  ' 场景唯一标识
+  + id: String
+  ' 场景类型
+  + type: SceneType
+  ' 本条场景覆盖的词汇
+  + entries: List<MemEntry>
+  ' 场景标题
+  + title: String
+
+  ' ——— 场景内容 ———
+  ' 结构化场景数据（JSON）
+  + content: String
+  ' 场景生成时间
+  + createdAt: Int64
+}
+
+note right of LearningScene
+  content 按 sceneType 不同结构不同：
+  READING:  [{ sentence, translation, sceneDescription }]
+  WRITING:  [{ scenario, keywords, referenceSentence }]
+  LISTENING:[{ audioText, translation, sceneHint }]
+  SPEAKING: [{ scenario, targetSentence, pronunciationGuide }]
+end note
+
+' ==================== 接口定义 ====================
+
+interface "ISceneOrchestrator" {
+
+  ' 异步生成指定类型的学习场景，返回 sceneId
+  ' 结果通过 sceneReady / sceneError 信号返回
+  + generateScene(entries: List<MemEntry>, sceneType: SceneType, config: SceneConfig): String
+
+  ' 取消正在生成的场景
+  + cancelGeneration(sceneId: String): Void
+
+  ' 获取已生成的场景内容
+  + getScene(sceneId: String): LearningScene | Null
+}
+
+note right of ISceneOrchestrator
+  信号（Qt signal）:
+  - sceneReady(sceneId: String, scene: LearningScene)  ' 场景生成完成
+  - sceneError(sceneId: String, error: String)         ' 生成出错
+end note
+
+@enduml

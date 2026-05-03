@@ -1,6 +1,6 @@
 @startuml 持久化模块接口
 
-' 
+' id是嵌套的“命名空间”
 interface "Hold" {
     + load(id: List<String>, name: String) : data: Bytes
     + save(id: List<String>, name: String, data: Bytes) : void

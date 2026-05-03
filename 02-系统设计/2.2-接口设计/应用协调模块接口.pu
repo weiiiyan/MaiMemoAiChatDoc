@@ -1,0 +1,36 @@
+@startuml 应用协调模块接口
+
+class AppConfig {
+  ' 本地数据存储根路径
+  + dataPath: String
+  ' AI API Key
+  + apiKey: String
+  ' SRS 引擎配置
+  + srsConfig: SRSConfig
+  ' 是否启动后自动进入复习
+  + autoStartReview: Bool
+}
+
+interface "IAppCoordinator" {
+
+  ' 初始化应用
+  ' 参数 ui: IUIModule — 传入 UI 模块引用，内部完成信号连接与 UI 更新
+  ' 加载配置 → 初始化子模块 → 连接信号 → 恢复会话
+  + initialize(ui: IUIModule, config: AppConfig): Bool
+
+  ' 安全关闭应用
+  ' 保存状态 → 断开连接 → 释放子模块
+  + shutdown(): Void
+
+  ' 是否已初始化
+  + isInitialized(): Bool
+
+  ' 开始复习流程
+  ' getDueEntries → generateScenes(READING) → UI showCardReviewView
+  + startReview(): Void
+
+  ' 获取到期条目数量（供 UI 角标展示）
+  + dueEntryCount(): Int
+}
+
+@enduml
