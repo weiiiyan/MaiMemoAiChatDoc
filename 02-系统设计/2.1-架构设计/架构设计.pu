@@ -13,7 +13,10 @@ rectangle "AI服务接口" as AI
 UI --> App : 交互信息
 App --> Scene : 学习数据、学习场景数据
 App --> Sync : 记忆数据、学习数据
-App --> Hold : 配置、上下文等需要持久化的数据
+App --> Hold : 持久化的数据
+UI --> Hold : 持久化的数据
+Scene --> Hold : 持久化的数据
+Sync --> Hold : 持久化的数据
 Scene --> AI : 学习数据、学习场景数据
 Sync --> SRS : 记忆数据
 

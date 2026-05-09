@@ -115,7 +115,6 @@ interface "IDataSync" {
 }
 
 note right of IDataSync
-  信号（Qt signal）:
   - connected()
   - disconnected(reason: String)
   - entriesChanged(updatedIds: List<String>)
@@ -124,6 +123,8 @@ note right of IDataSync
 end note
 
 ' ==================== 补充结构 ====================
+
+' 这些有什么用？
 
 class EntryUpdate {
   + id: String

@@ -4,6 +4,6 @@
 interface "Hold" {
     + load(id: List<String>, name: String) : data: Bytes
     + save(id: List<String>, name: String, data: Bytes) : void
-    + remove(id: List<String>, name: String) : void
+    + remove(id: List<String>, name: String) : bool
     + exists(id: List<String>, name: String) : bool
 }
