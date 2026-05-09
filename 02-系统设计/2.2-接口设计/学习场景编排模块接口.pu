@@ -10,64 +10,82 @@ enum SceneType {
 }
 
 note right of SceneType
-  对应四种英语技能练习：
-  READING  - 看句子，想象场景
-  WRITING  - 确定场景，打出句子
-  LISTENING - 听句子，想象场景
-  SPEAKING - 想象场景，说出句子
+  对应四种英语技能练习的对话场景。
+  AI 根据场景类型扮演不同角色，
+  通过多轮对话引导用户练习。
 end note
+
+enum SessionStatus {
+  CREATING
+  ACTIVE
+  ENDED
+}
 
 ' ==================== 数据模型 ====================
 
 class SceneConfig {
-  ' 每条词汇生成几个场景句子
-  + sentencesPerWord: Int
+  ' 难度级别（beginner / intermediate / advanced）
+  + difficultyLevel: String
+  ' 最大对话轮数（0 = 无限制）
+  + maxRounds: Int
 }
 
-class LearningScene {
-  ' 场景唯一标识
+class SceneSession {
+  ' 会话唯一标识
   + id: String
   ' 场景类型
   + type: SceneType
-  ' 本条场景覆盖的词汇
+  ' 本场景覆盖的词汇
   + entries: List<MemEntry>
-  ' 场景标题
-  + title: String
-
-  ' ——— 场景内容 ———
-  ' 结构化场景数据（JSON）
-  + content: String
-  ' 场景生成时间
+  ' 系统提示词（createSession 时根据 type 和 entries 生成）
+  + systemPrompt: String
+  ' 当前对话轮数
+  + roundCount: Int
+  ' 会话状态
+  + status: SessionStatus
+  ' 创建时间
   + createdAt: Int64
 }
 
-note right of LearningScene
-  content 按 sceneType 不同结构不同：
-  READING:  [{ sentence, translation, sceneDescription }]
-  WRITING:  [{ scenario, keywords, referenceSentence }]
-  LISTENING:[{ audioText, translation, sceneHint }]
-  SPEAKING: [{ scenario, targetSentence, pronunciationGuide }]
+note right of SceneSession
+  一次学习对话就是一个 SceneSession。
+  AI 的回复是即时生成的，不是预先生成的静态内容。
+  用户与 AI 多轮交互来完成学习。
 end note
 
 ' ==================== 接口定义 ====================
 
 interface "ISceneOrchestrator" {
 
-  ' 异步生成指定类型的学习场景，返回 sceneId
-  ' 结果通过 sceneReady / sceneError 信号返回
-  + generateScene(entries: List<MemEntry>, sceneType: SceneType, config: SceneConfig): String
+  ' 创建学习对话会话，设置 AI 角色与初始提示词，返回 sessionId
+  ' 异步：会话创建完成后通过 sessionCreated 信号通知
+  + createSession(entries: List<MemEntry>, sceneType: SceneType, config: SceneConfig): String
 
-  ' 取消正在生成的场景
-  + cancelGeneration(sceneId: String): Void
+  ' 在学习对话中发送用户消息
+  ' AI 回复通过 responseStreaming / responseComplete 信号异步返回
+  + sendMessage(sessionId: String, content: String): Void
 
-  ' 获取已生成的场景内容
-  + getScene(sceneId: String): LearningScene | Null
+  ' 停止当前 AI 响应生成
+  + stopResponse(sessionId: String): Void
+
+  ' 结束学习对话，释放相关资源
+  + endSession(sessionId: String): Void
+
+  ' 获取会话信息（可用于恢复会话）
+  + getSession(sessionId: String): SceneSession | Null
 }
 
 note right of ISceneOrchestrator
   信号（Qt signal）:
-  - sceneReady(sceneId: String, scene: LearningScene)  ' 场景生成完成
-  - sceneError(sceneId: String, error: String)         ' 生成出错
+  - sessionCreated(sessionId: String)
+  - responseStreaming(sessionId: String, chunk: String)
+  - responseComplete(sessionId: String, message: String)
+  - sessionError(sessionId: String, error: String)
+  - sessionEnded(sessionId: String)
+
+  与旧版的核心区别：
+  不再预生成场景内容，而是创建对话会话，
+  让用户与 AI 在多轮交互中完成学习。
 end note
 
 @enduml
