@@ -47,7 +47,7 @@ class MemEntry {
 
 note right of MemEntry
   MemEntry 是 app 内部统一的记忆条目表示。
-  无论底层是默默背单词还是 Anki，都映射为此结构。
+  无论底层是墨墨背单词还是 Anki，都映射为此结构。
 end note
 
 class SRSConfig {
@@ -80,7 +80,7 @@ interface "IDataSync" {
   + isConnected(): Bool
   ' 获取当前引擎类型
   + engineType(): EngineType
-  ' 引擎是否支持写入（默默背单词可能为只读）
+  ' 引擎是否支持写入（墨墨背单词可能为只读）
   + isWritable(): Bool
 
   ' ——— 条目查询 ———
