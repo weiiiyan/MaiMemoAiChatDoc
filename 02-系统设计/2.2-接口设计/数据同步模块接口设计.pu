@@ -3,9 +3,14 @@
 ' ==================== 枚举 ====================
 
 enum EngineType {
-  MO_MO_BEI
   ANKI
+  MO_MO_BEI
 }
+
+note right of EngineType
+  当前优先支持 Anki（通过 AnkiConnect）。
+  Anki 为默认引擎，墨墨背单词后续扩展。
+end note
 
 enum SyncStatus {
   IDLE
@@ -14,46 +19,96 @@ enum SyncStatus {
   ERROR
 }
 
+enum EaseRating {
+  ' 重来 — 完全忘记，间隔归零
+  AGAIN = 1
+  ' 困难 — 回想起来但很费力
+  HARD = 2
+  ' 良好 — 正常回想
+  GOOD = 3
+  ' 简单 — 轻松回想
+  EASY = 4
+}
+
+note right of EaseRating
+  对应 Anki 的 4 级评分体系。
+  与 SM-2 的 0~5 评分不同，Anki 的 ease
+  直接传给 answerCards API，由 Anki
+  内部 FSRS/SM-2 算法重新计算间隔。
+end note
+
+enum CardQueue {
+  ' 新卡片，尚未学习
+  NEW = 0
+  ' 学习中（在短期间隔队列中）
+  LEARN = 1
+  ' 已掌握，等待复习
+  REVIEW = 2
+  ' 到期待复习
+  DUE = 3
+}
+
 ' ==================== 数据模型 ====================
 
 class MemEntry {
-  ' 条目唯一标识（引擎内唯一）
-  + id: String
-  ' 词汇 / 短语原文
-  + word: String
-  ' 释义
-  + meaning: String
+  ' Anki Note ID（引擎内唯一标识）
+  + noteId: Int64
+  ' 主卡片 ID（一个 Note 可关联多张 Card，取主卡片）
+  + cardId: Int64
+  ' 全部关联卡片 ID
+  + cardIds: List<Int64>
+  ' 所属牌组名称
+  + deckName: String
+  ' 笔记类型名称（如 "Basic"）
+  + modelName: String
+  ' 原始字段（映射到 Anki Note 的 fields）
+  + fields: Map<String, String>
+  ' 标签
+  + tags: List<String>
   ' 来源引擎
   + source: EngineType
-  ' 标签（词性 / 分类）
-  + tags: List<String>
 
-  ' ——— SRS 参数 ———
-  ' 记忆等级（0=新词）
-  + level: Int
-  ' 易度因子（SM-2 EF）
+  ' ——— SRS 参数（从 Anki Card 同步，用于离线缓存）———
+  ' 易度因子（FSRS 难度 D / SM-2 EF）
   + easeFactor: Float
-  ' 当前复习间隔（秒）
-  + interval: Int64
-  ' 连续正确次数
-  + consecutiveCorrect: Int
+  ' 当前复习间隔（天）
+  + intervalDays: Float
+  ' 到期时间戳
+  + due: Int64
   ' 总复习次数
-  + totalReviews: Int
-  ' 下次复习时间戳
-  + nextReviewAt: Int64
+  + reps: Int
+  ' 遗忘次数
+  + lapses: Int
+  ' 卡片队列类型
+  + queue: CardQueue
   ' 最后复习时间戳
   + lastReviewedAt: Int64
 }
 
 note right of MemEntry
-  MemEntry 是 app 内部统一的记忆条目表示。
-  无论底层是墨墨背单词还是 Anki，都映射为此结构。
+  MemEntry 是 app 内部统一的记忆条目。
+  每个 MemEntry 对应一个 Anki Note + 其主 Card。
+
+  字段映射示例：
+  - word  → fields["Front"]
+  - meaning → fields["Back"]
+
+  映射关系在 SRSConfig.fieldMapping 中配置。
+
+  SRS 参数由 Anki 内部维护，pullFromEngine
+  时同步到本地缓存用于离线显示。
 end note
 
 class SRSConfig {
   + engineType: EngineType
-  ' 引擎专属配置（JSON，如路径 / token）
-  + options: String
+  ' AnkiConnect 服务地址（默认 http://localhost:8765）
+  + url: String
+  ' 要同步的牌组名称
+  + deckName: String
+  ' 笔记类型名称
+  + modelName: String
+  ' 字段映射（app 逻辑字段 → Anki Note 字段名）
+  + fieldMapping: Map<String, String>
   ' 自动同步间隔（秒），0 表示不自动同步
   + autoSyncInterval: Int
 }
@@ -67,12 +122,36 @@ class SyncReport {
   + syncedAt: Int64
 }
 
+class AnswerRecord {
+  + cardId: Int64
+  + ease: EaseRating
+  + reviewedAt: Int64
+}
+
+note bottom of AnswerRecord
+  单次复习结果记录。
+  answerCards 方法接受 AnswerRecord 列表，
+  支持单条和批量提交。
+end note
+
+class DeckInfo {
+  + name: String
+  + id: Int64
+  + cardCount: Int
+}
+
+class NoteTypeInfo {
+  + name: String
+  + id: Int64
+  + fieldNames: List<String>
+}
+
 ' ==================== 接口定义 ====================
 
 interface "IDataSync" {
 
   ' ——— 引擎生命周期 ———
-  ' 连接到 SRS 引擎
+  ' 连接到 SRS 引擎（AnkiConnect）
   + connect(config: SRSConfig): Bool
   ' 断开连接
   + disconnect(): Void
@@ -80,33 +159,49 @@ interface "IDataSync" {
   + isConnected(): Bool
   ' 获取当前引擎类型
   + engineType(): EngineType
-  ' 引擎是否支持写入（墨墨背单词可能为只读）
+  ' 引擎是否支持写入（AnkiConnect 始终为 true）
   + isWritable(): Bool
+
+  ' ——— 牌组 / 笔记类型发现 ———
+  ' 获取所有牌组列表（供配置选择）
+  + getDeckNames(): List<String>
+  ' 获取牌组详情（含卡片数量）
+  + getDeckInfo(deckName: String): DeckInfo
+  ' 获取所有笔记类型名称
+  + getModelNames(): List<String>
+  ' 获取笔记类型的字段名列表
+  + getModelFieldNames(modelName: String): List<String>
 
   ' ——— 条目查询 ———
   ' 获取所有记忆条目（从本地缓存）
   + getAllEntries(): List<MemEntry>
-  ' 获取到期需复习的条目，按 nextReviewAt 排序
-  + getDueEntries(limit: Int): List<MemEntry>
-  ' 根据 ID 查询单条
-  + getEntryById(id: String): MemEntry | Null
-  ' 搜索条目（关键词匹配 word / meaning）
+  ' 获取到期需复习的条目，按 due 时间排序
+  + getDueEntries(limit: Int, deckName: String): List<MemEntry>
+  ' 根据 Note ID 查询单条
+  + getEntryByNoteId(noteId: Int64): MemEntry | Null
+  ' 根据 Card ID 查询单条
+  + getEntryByCardId(cardId: Int64): MemEntry | Null
+  ' 搜索条目（关键词匹配字段内容）
   + searchEntries(keyword: String): List<MemEntry>
 
-  ' ——— 条目更新 ———
-  ' 复习后更新条目状态，quality 为 SM-2 评分 (0~5)
-  + updateEntryAfterReview(id: String, quality: Int): Void
-  ' 批量更新（用于离线累积后一次性提交）
-  + batchUpdateEntries(updates: List<EntryUpdate>): Void
-  ' 添加自定义词条（返回分配的 id）
-  + addEntry(word: String, meaning: String, tags: List<String>): String
-  ' 删除词条
-  + removeEntry(id: String): Void
+  ' ——— 笔记管理 ———
+  ' 添加新笔记（返回 Note ID）
+  + addNote(fields: Map<String, String>, tags: List<String>): Int64
+  ' 更新笔记字段
+  + updateNoteFields(noteId: Int64, fields: Map<String, String>): Void
+  ' 删除笔记及其关联卡片
+  + deleteNote(noteId: Int64): Void
+
+  ' ——— 复习提交 ———
+  ' 单条复习提交（ease 为 Anki 评分 1~4）
+  + answerCard(cardId: Int64, ease: EaseRating): Void
+  ' 批量复习提交（用于累积后一次性回写）
+  + answerCards(answers: List<AnswerRecord>): Void
 
   ' ——— 双向同步 ———
-  ' 从引擎拉取最新数据（增量）
+  ' 从 Anki 拉取变更数据（增量，基于 mod time）
   + pullFromEngine(): SyncReport
-  ' 将本地变更推送到引擎
+  ' 将本地待推送的变更写入 Anki
   + pushToEngine(): SyncReport
   ' 全量双向同步
   + fullSync(): SyncReport
@@ -115,26 +210,73 @@ interface "IDataSync" {
 }
 
 note right of IDataSync
+  ——— 信号 ———
   - connected()
   - disconnected(reason: String)
-  - entriesChanged(updatedIds: List<String>)
+  - entriesChanged(updatedNoteIds: List<Int64>)
   - syncFinished(report: SyncReport)
   - errorOccurred(error: String)
+
+  ——— AnkiConnect 映射 ———
+  connect → 验证 AnkiConnect 可访问
+  getDeckNames → deckNames API
+  getModelNames → modelNames API
+  getModelFieldNames → modelFieldNames API
+  getDueEntries → findCards("deck:X is:due") + cardsInfo
+  getAllEntries → 本地缓存 (Hold)
+  pullFromEngine → findNotes + notesInfo + cardsInfo（增量）
+  pushToEngine → updateNoteFields（本地修改回写）
+  addNote → addNote API
+  updateNoteFields → updateNoteFields API
+  deleteNote → deleteNotes API
+  answerCard / answerCards → answerCards API
 end note
 
-' ==================== 补充结构 ====================
+' ==================== 引擎适配器 ====================
 
-' 这些有什么用？
+interface "ISRSEngine" {
+  + connect(config: SRSConfig): Bool
+  + disconnect(): Void
+  + isConnected(): Bool
+  + engineType(): EngineType
+  + isWritable(): Bool
 
-class EntryUpdate {
-  + id: String
-  + quality: Int
-  + reviewedAt: Int64
+  ' 元数据
+  + fetchDeckNames(): List<String>
+  + fetchModelNames(): List<String>
+  + fetchModelFieldNames(modelName: String): List<String>
+
+  ' 数据拉取
+  + fetchNoteIds(query: String): List<Int64>
+  + fetchNotesInfo(noteIds: List<Int64>): List<MemEntry>
+  + fetchCardsInfo(cardIds: List<Int64>): List<MemEntry>
+  + fetchModifiedNoteIds(since: Int64): List<Int64>
+
+  ' 数据推送
+  + createNote(fields: Map<String, String>, tags: List<String>): Int64
+  + updateNoteFields(noteId: Int64, fields: Map<String, String>): Void
+  + deleteNotes(noteIds: List<Int64>): Void
+
+  ' 复习
+  + submitReviews(answers: List<AnswerRecord>): Void
 }
 
-note bottom of EntryUpdate
-  用于 batchUpdateEntries 的批量更新单元。
-  updateEntryAfterReview 的内部参数也与之相同。
+note right of ISRSEngine
+  ISRSEngine 是底层引擎适配接口。
+  AnkiConnectEngine 实现此接口，封装
+  AnkiConnect REST API 调用。
+
+  IDataSync 通过 ISRSEngine 访问引擎，
+  自身负责本地缓存管理和同步编排。
 end note
+
+class AnkiConnectEngine {
+  + connect(config: SRSConfig): Bool
+  + disconnect(): Void
+  ' 内部封装 HTTP POST → localhost:8765
+  ' 请求格式: {action, version, params}
+}
+
+AnkiConnectEngine -up-|> ISRSEngine
 
 @enduml
